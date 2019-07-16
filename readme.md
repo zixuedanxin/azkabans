@@ -93,7 +93,7 @@ aztest是测试文件
 # azrun.py是命令工具文件
 
 
-    /mypython/etlpy/azkaban/azkabans/azrun.py -h
+    /xuzh/azkaban/azkabans/azrun.py -h
     usage: azrun.py [-h] [-f FLOWS] [-t CRONTAB] [-i IGNORE] [-p PARAM]
                     {u,e,s,a} prj_nm
     
@@ -142,3 +142,8 @@ aztest是测试文件
     2、 razrun.py 只支持 u 表示更新项目元数据， e 表示执行项目 s 表示给项目添加执行计划,a 激活执行节点
     3、没有时间做操作文档
     4、没有做成web模式，因为感觉这样更简单
+
+
+# 贡献代码
+xuzh
+ 
