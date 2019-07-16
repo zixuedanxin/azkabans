@@ -1,0 +1,5 @@
+dependencies = dim_city
+type = command
+retries = 3
+retry.backoff = 120000
+command = echo ${etl_dt}
