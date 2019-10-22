@@ -2,15 +2,16 @@
 import time
 import pymysql
 import pandas as pd
-from .cron import Cron
+from azkaban.cron import Cron
 import os
 import zipfile
 import re
 import requests
 import shutil
-from .Properties import Properties
+from azkaban.properties import Properties
 from six.moves.urllib.parse import urlparse
-from .config import main_path, logger, conf_path, azkaban_url, config, temp_path
+from azkaban.config import main_path, logger, conf_path, azkaban_url, config, temp_path, check_file_exists, job_config_keys, \
+    azkaban_config_param, is_prod
 import sys
 
 
@@ -133,10 +134,11 @@ def active_executor(hosts=None, port=12321):
     if len(unactive_host_list) < 1:
         logger.info("所有节点都已经激活")
         return
-    if hosts not in unactive_host_list:
-        logger.info("{0}节点没有部署成功，请确认是否部署成功和hostname".format(hosts))
-        return
+
     if hosts:
+        if hosts not in unactive_host_list:
+            logger.info("{0}节点没有部署成功，请确认是否部署成功和hostname".format(hosts))
+            return
         url = "http://{0}:{1}/executor?action=activate".format(hosts, port)
         try:
             rs = requests.get(url)
@@ -172,6 +174,17 @@ def azkaban_mysql_conn():
     return con
 
 
+def azkaban_blob_to_str(blobs):
+    """
+    将azkaban mysql中的longblob转化成字符串
+    :param blobs:
+    :return:
+    """
+    import gzip
+    data = gzip.decompress(blobs).decode("utf-8")
+    return data
+
+
 def get_projects():
     conn = azkaban_mysql_conn()
     df = pd.read_sql("select id prj_id,name prj_nm from projects where active=1", conn)
@@ -182,6 +195,19 @@ def get_projects():
     df = df.set_index(keys='prj_nm')
     conn.close()
     return df.to_dict()['prj_id']
+
+
+def get_execution_prj_and_flow(exec_id):
+    conn = azkaban_mysql_conn()
+    sql = """select exec_id,flow_id,p.name prj_nm from execution_flows f 
+        left join projects p on f.project_id=p.id
+        where exec_id={0} limit 1""".format(exec_id)
+    df = pd.read_sql(sql, conn, index_col="exec_id")
+    conn.close()
+    if df.shape[0] > 0:
+        return {'flow_id': df.loc[exec_id, 'flow_id'], 'prj_nm': df.loc[exec_id, 'prj_nm']}
+    else:
+        raise Exception(":execution_id: {0} 不存在，请确认是否输入错误".format(exec_id))
 
 
 def get_executor(host=None, active=None, rstype='exec_id'):
@@ -221,6 +247,7 @@ def get_executor(host=None, active=None, rstype='exec_id'):
 
 def get_project_info(prj_nm, key_nm):
     """
+    获取项目的参数配置,例如dw.properties
     :param prj_nm
     :param key_nm 如a.b.c a
     :return
@@ -241,40 +268,11 @@ def get_project_info(prj_nm, key_nm):
 
 
 def get_global_prop(prj_nm=None):
-    """获取所有参数，生成字典"""
-    global_prop = {
-        'azkaban.job.attempt': 'azkaban.job.attempt',  # job重试次数，从0开始增加
-        'azkaban.job.id': 'azkaban.job.id',  # 运行的job name
-        'azkaban.flow.flowid': 'azkaban.flow.flowid',  # 运行的job的flow name
-        'azkaban.flow.execid': 'azkaban.flow.execid',  # flow的执行id
-        'azkaban.flow.projectid': 'azkaban.flow.projectid',  # 工程id
-        'azkaban.flow.projectversion': 'azkaban.flow.projectversion',  # project上传的版本
-        'azkaban.flow.uuid': 'azkaban.flow.uuid',  # flow uuid
-        'azkaban.flow.start.timestamp': 'azkaban.flow.start.timestamp',  # flow start的时间戳
-        'azkaban.flow.start.year': 'azkaban.flow.start.year',  # flow start的年份
-        'azkaban.flow.start.month': 'azkaban.flow.start.month',  # flow start 的月份
-        'azkaban.flow.start.day': 'azkaban.flow.start.day',  # flow start 的天
-        'azkaban.flow.start.hour': 'azkaban.flow.start.hour',  # flow start的小时
-        'azkaban.flow.start.minute': 'azkaban.flow.start.minute',  # start 分钟
-        'azkaban.flow.start.second': 'azkaban.flow.start.second',  # start 秒
-        'azkaban.flow.start.millseconds': 'azkaban.flow.start.millseconds',  # start的毫秒
-        'azkaban.flow.start.timezone': 'azkaban.flow.start.timezone',  # start 的时区
-        'retries': 'retries',  # 失败的job的自动重试的次数 job参数
-        'retry.backoff': 'retry.backoff',  # 重试的间隔（毫秒）
-        'working.dir': 'working.dir',  # 指定命令被调用的目录。默认的working目录是executions/${execution_ID}目录 job参数
-        'env.property': 'env.property',  # 指定在命令执行前需设置的环境变量。Property定义环境变量的名称，job参数
-        'failure.emails': 'failure.emails',  # job失败时发送的邮箱,用逗号隔开 job参数
-        'success.emails': 'success.emails',  # job成功时发送的邮箱，用逗号隔开 job参数
-        'notify.emails': 'notify.emails',  # job成功或失败都发送的邮箱，用逗号隔开 job参数
-        'JOB_PROP_FILE': "",
-        'JOB_OUTPUT_PROP_FILE': "",
-        'main_path': main_path,
-        'etl_dt': time.strftime("%Y-%m-%d"),
-        'etl_dtm': time.strftime("%Y-%m-%d %H:%M:%S"),
-        'etl_tm': time.strftime("%H:%M:%S"),
-        'etl_ts': int(time.time()),
-
-    }
+    """
+    获取所有参数，生成字典
+    :param prj_nm 项目名称
+    """
+    global_prop = azkaban_config_param  # azkaban 系统参数
     keys = list(global_prop.keys())
     for k in keys:
         if '.' in k:
@@ -291,9 +289,10 @@ def get_global_prop(prj_nm=None):
     return global_prop
 
 
-def rplc_cmd_with_prop(cmd, prj_nm=None):
+def rplc_cmd_with_prop(cmd, prj_nm, global_prop=None):
     """替换命令里面的参数用来测试"""
-    global_prop = get_global_prop(prj_nm)
+    if global_prop is None:
+        global_prop = get_global_prop(prj_nm)
     cmd = cmd.replace("$", "")
     match = re.findall(r"{.*?}", cmd)  # r"\{.*?\}"
     for i in match:
@@ -301,6 +300,22 @@ def rplc_cmd_with_prop(cmd, prj_nm=None):
             cmd = cmd.replace(i, i.replace(".", "_"))
     try:
         cmd = cmd.format(**global_prop)
+        if check_file_exists:  # 检查文件是否存在
+            tp = cmd.split(" ")
+            for i in tp[0:2]:  # 仅检查前两个
+                if "." in i:
+                    file_nm, file_type = os.path.splitext(i)
+                    if file_type in ['.sh', '.py', '.jar']:
+                        if i.startswith("/") or i.startswith("\\"):
+                            file_nm = i
+                        else:
+                            file_nm = os.path.join(get_prj_path(prj_nm, file_type="dir", search_path="conf"), i)
+                        if not os.path.exists(file_nm):
+                            if is_prod:
+                                logger.error("项目文件不存在：" + file_nm)
+                                return None
+                            else:
+                                logger.warning("测试环境，项目文件不存在：" + file_nm)
         return cmd
     except Exception as e:
         errors = str(e)
@@ -332,14 +347,16 @@ def crt_sys_prop(prj_nm):
     path = get_prj_path(prj_nm, search_path="temp")
     with open(path, 'w') as f:
         for i in config['base'].items():
-            if not ('pwd' in i[0]):
+            if not ('pwd' in i[0] or i[0] in config.defaults().keys()):
                 f.write("{0} = {1}\n".format(i[0], i[1]))
         f.write("main_path={0}\n".format(main_path))
         f.write("etl_dt=${azkaban.flow.start.year}-${azkaban.flow.start.month}-${azkaban.flow.start.day}\n")
         f.write("etl_dtm=${azkaban.flow.start.year}-${azkaban.flow.start.month}-${azkaban.flow.start.day} ")
         f.write("${azkaban.flow.start.hour}:${azkaban.flow.start.minute}:${azkaban.flow.start.second}\n")
         f.write("etl_tm=${azkaban.flow.start.hour}:${azkaban.flow.start.minute}:${azkaban.flow.start.second}\n")
-        f.write("etl_ts=${azkaban.flow.start.timestamp}\n")
+        f.write("batch_dt=${azkaban.flow.start.year}-${azkaban.flow.start.month}-${azkaban.flow.start.day}\n")
+        f.write("batch_id=${azkaban.flow.start.year}${azkaban.flow.start.month}${azkaban.flow.start.day}")
+        f.write("${azkaban.flow.start.hour}${azkaban.flow.start.minute}${azkaban.flow.start.second}\n")
 
 
 def check_depend_if_in_flow(strs, lists):
@@ -356,10 +373,11 @@ def crt_job_file(prj_nm):
     if os.path.exists(filepath):
         df = pd.read_csv(filepath)
         prj_path = os.path.join(temp_path, prj_nm)
-        df['command'] = df['command'].fillna("echo 'exec ${azkaban.job.id} of ${azkaban.flow.flowid}'")
+        df['command'] = df['command'].fillna(
+            "echo 'Exec ${azkaban.job.id} of ${azkaban.flow.flowid} at ${azkaban.flow.start.timestamp}' etl_dt:${etl_dt} batch_dt:${batch_dt}")
         if os.path.exists(prj_path):
             import shutil
-            shutil.rmtree(prj_path)
+            shutil.rmtree(prj_path)  # 清空项目对应的临时目录，一般是temp目录下
         os.makedirs(prj_path)
         df = df.fillna('')
         jobs = list(df['job_nm'])
@@ -370,13 +388,26 @@ def crt_job_file(prj_nm):
                 job.write("type = command\n")
                 if len(i['dependencies']) > 1:
                     job.write("dependencies = " + i['dependencies'].strip().replace("，", ",").replace(" ", ",") + "\n")
-                job.write("retries = 3\n")
-                job.write("retry.backoff = 120000\n")  # 重试的间隔（毫秒）
+                job.write("retries = {0}\n".format(get_project_info(prj_nm, "retries") or 3))
+                job.write("retry.backoff = {0}\n".format(get_project_info(prj_nm, "retry.backoff") or 60000))  # 重试的间隔（毫秒）
+                if get_project_info(prj_nm, "failure.emails"):
+                    # 失败邮件通知 如果项目配置文件有配置
+                    job.write("failure.emails = {0}\n".format(get_project_info(prj_nm, "failure.emails")))
+                if get_project_info(prj_nm, "success.emails"):
+                    # 失败邮件通知 如果项目配置文件有配置
+                    job.write("success.emails = {0}\n".format(get_project_info(prj_nm, "success.emails")))
+                if get_project_info(prj_nm, "working.dir"):
+                    # 失败邮件通知 如果项目配置文件有配置
+                    job.write("working.dir = {0}\n".format(get_project_info(prj_nm, "working.dir")))
                 # command = "command = {0} {1} {2} {3}".format(i['command'].strip(), i['arg1'], i['arg2'], i['arg3'])
                 command = "command = {0}".format(i['command'].strip())
-                if rplc_cmd_with_prop(command, prj_nm):
+                check_cmd = rplc_cmd_with_prop(i['command'].strip(), prj_nm)
+                if check_cmd:
                     job.write(command.strip())
-        logger.info("{0}项目job文件生成完成".format(prj_nm))
+                else:
+                    logger.error("{0}项目job文件生中断，命令解析不通过".format(prj_nm))
+                    sys.exit(9)
+        # logger.info("{0}项目job文件生成完成".format(prj_nm))
         crt_sys_prop(prj_nm)
         copy_local_param(prj_nm)
         # copy_dir(prj_conf_path, os.path.join(prj_path, 'scripts'), ignore_file_type=['job', 'flow', 'project'])
@@ -384,7 +415,7 @@ def crt_job_file(prj_nm):
         copy_dir(prj_conf_path, prj_path, ignore_file_type=['properties'])
         zip_path = prj_path + '.zip'
         zip_dir(prj_path, zip_path)
-        logger.info("{0}项目压缩完成，文件路径是：{1}".format(prj_nm, zip_path))
+        # logger.info("{0}项目压缩完成，文件路径是：{1}".format(prj_nm, zip_path))
         return zip_path
     else:
         logger.error("文件不存在:" + filepath)
@@ -402,7 +433,7 @@ def check_cron(cron):
             logger.error("cron不能为空或者格式不对,你输入的是{0}".format(cron))
             return False
     else:
-        logger.error("cron不能为空或者格式不对,你输入的是{0}".format(cron))
+        logger.warning("cron不能为空或者格式不对,你输入的是{0}".format(cron))
         return False
 
 
@@ -443,7 +474,13 @@ def copy_local_param(prj_nm):
         with open(rd_file, 'r') as r:
             line = r.readline()
             while line:
-                w.write(line)
+                if "=" in line.strip():
+                    tp = line.strip().split("=")[0].strip()
+                    if tp in job_config_keys or 'cron' in tp:
+                        # 特殊参数 和job参数不输入到systemp.properties
+                        pass
+                    else:
+                        w.write(line)
                 line = r.readline()
 
 
@@ -465,6 +502,28 @@ def extract_json(response):
             raise json['message']
         else:
             return json
+
+
+def check_failed_job():
+    sql = """
+    select
+        distinct
+        t1.name prj_nm,
+        t2.flow_id,
+        t2.job_id,
+        input_params, 
+        t2.exec_id,l.log logs,
+        FROM_UNIXTIME(t2.start_time/1000, '%Y-%m-%d %H:%i:%s') start_time
+        from execution_jobs t2 left join projects t1 on t2.project_id=t1.id 
+        left join execution_logs l on t2.exec_id=l.exec_id and t2.job_id=l.name and t2.attempt=l.attempt
+        where  t2.status=70 and unix_timestamp()-(t2.start_time/1000)<=3600 and t2.attempt=0
+    """
+    conn = azkaban_mysql_conn()
+    err_df = pd.read_sql(sql, conn)
+    if err_df.shape[0] > 0:
+        for i in err_df.index:
+            input_params = azkaban_blob_to_str(err_df.loc[i, 'input_params'])
+            print(azkaban_blob_to_str(err_df.loc[i, 'logs']))
 
 
 def check_file_depend():
@@ -495,4 +554,13 @@ select t.name, t.last_modified_by, cast(t.last_failed_exec_id as char(7)) as las
                        group by t1.name, t1.last_modified_by 
                       -- having count(distinct (case when t2.status=70 then t2.exec_id else null end))>0
                       ) t
+                      
+                      
+                      select
+                            distinct
+                       t1.name, t1.last_modified_by,t2.flow_id,t2.job_id,input_params, t2.exec_id,l.log,
+                       FROM_UNIXTIME(t2.start_time/1000, '%Y-%m-%d %H:%i:%s') start_time
+                       from execution_jobs t2 left join projects t1 on t2.project_id=t1.id 
+                          left join execution_logs l on t2.exec_id=l.exec_id and t2.job_id=l.name and t2.attempt=l.attempt
+                       where  t2.status=70 and unix_timestamp()-(t2.start_time/1000)<=3600 and t2.attempt=0
 """

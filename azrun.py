@@ -4,8 +4,9 @@
 # import os
 
 import argparse
-from azkaban.azkaban import Flow, Project
+from azkaban.azkabans import Flow, Project
 from azkaban.utils import *
+from azkaban.azssh import restart_azkaban
 
 
 def update_project(prj_nm):
@@ -20,6 +21,7 @@ def update_project(prj_nm):
         prj_old_flow_cnt = len(prj.fetch_flow())
         prj.upload_zip(zip_path)  # 上传zip文件
         prj_new_flow_cnt = len(prj.fetch_flow())
+        shutil.rmtree(zip_path.replace(".zip", ""))  # 清空项目对应的临时目录，一般是temp目录下
         if prj_new_flow_cnt > 1:
             logger.warning(prj_nm + "一个项目出现多个工作流，不符合我们的业务规则。请以某个工作流或者end_flow作为结束")
         if 0 < prj_old_flow_cnt != prj_new_flow_cnt:
@@ -74,8 +76,8 @@ def exec_project(prj_nm, flows=None, flow_override=None, disabled=None):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="远程部署azkaban")
-    helps = "u 表示更新项目元数据， e 表示执行项目 s 表示给项目添加执行计划,a 激活执行节点 "
-    parser.add_argument("action", type=str, choices=["u", "e", "s", "a"], help=helps)
+    helps = "u 表示更新项目元数据， e 表示执行项目 s 表示给项目添加执行计划,a 激活执行节点 r 重启azkaban"
+    parser.add_argument("action", type=str, choices=["u", "e", "s", "a", "r"], help=helps)
     parser.add_argument("prj_nm", type=str, help="项目名称字符型", default="dw")
     parser.add_argument("-f", "--flows", help="工作流的字符列表,eg: \"['a','b']\" ", type=str, default=None)
     parser.add_argument("-t", "--crontab", help="cron的定时器格式字符串", type=str, default=None)
@@ -84,12 +86,12 @@ if __name__ == '__main__':
     args = parser.parse_args()
     action = args.action
     project = args.prj_nm
-    flows_list = eval_str(args.flows)
-    ignore = eval_str(args.ignore)
-    param = eval_str(args.param)
+    flows_list = eval_str(args.flows)  # help="工作流的字符列表,eg: \"['a','b']\"
+    ignore = eval_str(args.ignore)  # help="job name的字符列表 eg.\"['a','b']\" "
+    param = eval_str(args.param)  # "参数传入，数据字典,可以覆盖全局参数 \"{'s':1}\""
     if action == "u":
         # 更新元数据
-        update_project(project)
+        update_project(project)  # 上传新项目后，会自动加入定时任务。如果有特殊需求只发布不加定时任务的。需要手动删除
     elif action == "e":
         # 执行工作流
         if param is None or type(param) == dict:
@@ -103,3 +105,9 @@ if __name__ == '__main__':
             active_executor()
         else:
             active_executor(project, port=12321)
+    elif action == "r":
+        # 设置执行计划
+        if project == "all":
+            restart_azkaban()
+        else:
+            restart_azkaban()

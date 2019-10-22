@@ -2,7 +2,7 @@
 # Azkabans介绍
 
     本项目主要用于azkaban远程发布项目，定时发布项目等辅助功能。
-    1、所有的作业都是已shell命令执行，这样使得作业配置更简单
+    1、所有的作业都是shell命令执行，这样使得作业配置更简单
     2、减少job文件的配置，所有job会根据配置文件自动生成，校验依赖作业，并自动打包上传,自动加入定时任务
     3、把azkaban当中任务执行和查看的介质，任务配置以批量配置的方式，减少工作量、方便管理项目
     4、azkaban的项目发布需把整个项目都重新发布，这个比较麻烦还容易出错。借助azkabans更容易管理
@@ -28,6 +28,8 @@
     用于备份项目的历史zip文件。
     
     上传新的zip文件之前先把老的版本下载下来本分到此文件夹下
+    
+    也可以单独指定备份目录. eg: config.ini backup_path=/home/xzh/azkaban/backup
 
 # **conf目录**
 
@@ -36,10 +38,10 @@
     [base]项是必须项,这里的配置项也会作为全局变量输出到system.properties文件中
             #  定义base分组，必须配置
             [base]
-            azkaban_url=http://broker2:8081  # 你的azkaban登录的url
+            azkaban_url=http://broker2:8081  # 你的azkaban登录的url azkaban有的限制域名访问，需要设置或改成IP
             login_user=testAdmin             # azkaban 登录用户名
             login_pwd=testAdmin              # azkaban 登录密码
-            check_interval=600               # 休息间隔时间
+            check_interval=600               # 休息间隔时间,任务执行失败从新尝试等待时间 循环监控时间
             # mysql配置
             mysql_host=broker2
             mysql_port=3306
@@ -83,7 +85,10 @@
 # **temp目录**
 
     项目生成的临时文件夹，例如dw是用来存放项目dw的临时文件
-    （包含job文件、脚本文件等）,最后会被打包成dw.zip文件,然后上传项目
+    
+    （包含job文件、脚本文件等）,最后会被打包成dw.zip文件,然后远程上传项目
+    
+    也可以单独指定备份目录. eg: config.ini temp_path=/home/xzh/azkaban/temp
 
 
 
@@ -136,11 +141,12 @@ aztest是测试文件
         
         3.6 azrun.py e mydw "{'useExecutor':2}" 执行mydw所有工作流，并且指定useExecutor
 
-
+    4、aztest.py 用于开发测试，可以随意修改
+    
 # 总结
     1、项目里面azkaban,所有的操作api均已实现，可以看具体的对象方法
     2、 razrun.py 只支持 u 表示更新项目元数据， e 表示执行项目 s 表示给项目添加执行计划,a 激活执行节点
-    3、没有时间做操作文档
+    3、对于指定执行任务暂没有实现，因为在操作界面上更容易
     4、没有做成web模式，因为感觉这样更简单
 
 

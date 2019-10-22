@@ -2,8 +2,9 @@ job_nm,dependencies,command
 start,,
 el_crm,start,sh scripts/testa.sh
 el_hyf,start,python -V
-dim_city,"el_crm,el_hyf",sh scripts/testb.sh ${azkaban.job.id} ${firstName}
-dim_mon,dim_city,echo ${etl_dtm}
+dim_city,"el_crm,el_hyf",python3 scripts/prop1.py
+dim_city2,dim_city,sh scripts/testb.sh ${azkaban.job.id} ${firstName}
+dim_mon,dim_city2,echo ${etl_dtm}
 mytest,dim_mon,sh scripts/testb.sh ${azkaban.job.id} ${firstName}
-end,mytest,
+end,mytest,python3 scripts/prop1.py
 endflow,end,

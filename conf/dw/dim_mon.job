@@ -1,4 +1,4 @@
-dependencies = dim_city
+dependencies = dim_city2
 type = command
 retries = 3
 retry.backoff = 120000

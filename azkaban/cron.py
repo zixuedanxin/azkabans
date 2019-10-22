@@ -103,7 +103,8 @@ class Cron(croniter):
 
         return expr_format
 
-    def get_week(self, expr_format):
+    @staticmethod
+    def get_week(expr_format):
         global week_day_dict
         week = expr_format.split(" ")[-1]
         result = ""

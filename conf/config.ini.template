@@ -1,77 +1,88 @@
 # 默认分组 azkababan开发版本3.74.3
+#DEFAULT 分组里面的配置不会作为全局参数输出到system.properties文件中
 [DEFAULT]
-
-#  定义base分组，必须配置
+check_file_exists = True
+check_interval = 600
+#  定义base分组，必须配置。除了密码（pwd结尾的配置）其他都会作为全局参数输出到system.properties文件中
 [base]
-azkaban_url=http://broker2:8081
-login_user=testAdmin
-login_pwd=testAdmin
-check_interval=600
+azkaban_url = http://10.12.5.37:8081
+login_user = testAdmin
+login_pwd = testAdmin
 # mysql配置
-mysql_host=broker2
-mysql_port=3306
-mysql_user=dps
-mysql_pwd=dps1234
-mysql_db=azkaban
-# ETL文件目录
-etl_path=/home/xzh/dps/etl/dpsetl/dpsetl/
-executor_host=broker1,broker2
-executor_port=12321
+mysql_host = broker2
+mysql_port = 3306
+mysql_user = dps
+mysql_pwd = dps1234
+mysql_db = azkaban
+# ETL脚本主目录
+etl_path = /home/xzh/dps/etl/dpsetl/dpsetl/
+#backup_path 指定备份目录 不指定默认在azkabans目录下 最好是指定备份目录
+# backup_path=/home/xzh/azkaban/backup
+#temp_path 临时文件目录 不指定默认在azkabans目录下
 
 
-# api配置
-[api]
-# 暂无
+# executor配置 暂时不用配置 未使用
+[executor]
+#配置方式 hostname.ip配置这个hostname对应的IP，hostname.user对应这个hostname对应的用户名 hostname.pwd对应一个用户的密码
+# hostname和executor表里面的一致，默认的ssh 端口都是22 目前只用于ssh执行命令，可以不配置。目前没有开发完成
+#主节点 master 所有文件同步只能是从主节点复制到其他节点
+#master=broker2
+#broker2.ip = 10.12.5.37
+#broker2.user = broker
+#broker2.pwd = broker
+#dps-office.ip = 10.12.5.35
+#dps-office.user = broker
+#dps-office.pwd = broker
 
 #以下皆为日志文件配置
 [loggers]
-keys=root,fileLogger,rotatingFileLogger
+keys = root,fileLogger,rotatingFileLogger
 
 [logger_root]
-level=INFO
-handlers=consoleHandler,rotatingFileHandler
+level = INFO
+handlers = consoleHandler,rotatingFileHandler
 
 [logger_fileLogger]
-level=DEBUG
-handlers=fileHandler,consoleHandler
-qualname=fileLogger
-propagate=0
+level = DEBUG
+handlers = fileHandler,consoleHandler
+qualname = fileLogger
+propagate = 0
 
 [logger_rotatingFileLogger]
-level=DEBUG
-handlers=consoleHandler,rotatingFileHandler
-qualname=rotatingFileLogger
-propagate=0
+level = DEBUG
+handlers = consoleHandler,rotatingFileHandler
+qualname = rotatingFileLogger
+propagate = 0
 
 [handlers]
-keys=consoleHandler,fileHandler,rotatingFileHandler
+keys = consoleHandler,fileHandler,rotatingFileHandler
 
 [handler_consoleHandler]
-class=StreamHandler
+class = StreamHandler
 # level=DEBUG
-formatter=simpleFormatter
-args=(sys.stdout,)
+formatter = simpleFormatter
+args = (sys.stdout,)
 
 [handler_fileHandler]
-class=FileHandler
+class = FileHandler
 # level=DEBUG
-formatter=simpleFormatter
-args=('run_split.log', 'a')
+formatter = simpleFormatter
+args = ('azkabans.log', 'a')
 
 [handler_rotatingFileHandler]
-class=handlers.RotatingFileHandler
+class = handlers.RotatingFileHandler
 # level=WARNING
-formatter=simpleFormatter
-args=("run_split.log", "a", 5*1024*1024, 5)
+formatter = simpleFormatter
+args = ("azkabans.log", "a", 5*1024*1024, 5)
 
 [formatters]
-keys=simpleFormatter,genericFormatter
+keys = simpleFormatter,genericFormatter
 
 [formatter_simpleFormatter]
-format=[%(asctime)s] %(filename)s-row:%(lineno)s - %(levelname)s - %(message)s
+format = [%(asctime)s] %(filename)s-row:%(lineno)s - %(levelname)s - %(message)s
 #format=%(asctime)s - %(module)s - %(thread)d - %(levelname)s : %(message)s
-datefmt=%Y-%m-%d %H:%M:%S
+datefmt = %Y-%m-%d %H:%M:%S
 
 [formatter_genericFormatter]
-format=[%(asctime)s] %(levelname)-5.5s [%(name)s:%(lineno)s][%(threadName)s] %(message)s
-datefmt=%Y-%m-%d %H:%M:%S
+format = [%(asctime)s] %(levelname)-5.5s [%(name)s:%(lineno)s][%(threadName)s] %(message)s
+datefmt = %Y-%m-%d %H:%M:%S

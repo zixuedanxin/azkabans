@@ -3,9 +3,9 @@
 import json
 # import logging
 # import os
-from .utils import *
-from .Cookies import Cookies
-from .config import logger, check_interval, backup_path
+from azkaban.utils import *
+from azkaban.cookies import Cookies
+from azkaban.config import logger, check_interval, backup_path
 
 # logger = logging.getLogger()
 cookies = Cookies()
@@ -16,7 +16,7 @@ class Project:
         self.name = project
         self.description = description
         if description is None:
-            self.description = project
+            self.description = get_project_info(self.name, "description") or project
         self.cookies_fetcher = cookies_fetcher
         if project in get_projects():
             self.crt_flag = True
@@ -35,10 +35,10 @@ class Project:
         resp = requests.post("{azkaban_url}/manager?action=create".format(azkaban_url=azkaban_url), data=create_data,
                              cookies=self.cookies_fetcher.get_cookies())
         if resp.status_code != 200:
-            raise Exception('Error happened when creating project {project} to azkaban'.format(project=self.name))
-        logger.info(resp.content)
-        logger.info('project {project} creatd : {status}'.format(project=self.name,
-                                                                 status=json.loads(str(resp.content, 'utf-8'))['status']))
+            raise Exception('项目 {project} 创建失败'.format(project=self.name))
+        # logger.info(resp.content)
+        logger.info('项目 {project} 创建状态 : {status}'.format(project=self.name,
+                                                          status=json.loads(str(resp.content, 'utf-8'))['status']))
         return self
 
     def del_prj(self):
@@ -84,7 +84,7 @@ class Project:
             logger.info("下载ZIP文件完成" + self.name + ": " + file_path)
             return True
         else:
-            logger.info("项目没有文件无需备份")
+            logger.info("项目不存在")
             return True
 
     def upload_zip(self, zip_file):
@@ -194,7 +194,7 @@ class Flow:
             # logger.info(rs)
             exec_id = json.loads(rs)['execid']
             logger.info(('开始执行{flow}，execid是{exec_id}'.format(flow=self.flowId, exec_id=exec_id)))
-            return FlowExecution(self.prj_name, self.flowId, exec_id, self.cookies_fetcher)
+            return FlowExecution(exec_id, self.cookies_fetcher)
 
     def fetch_job(self):
         """获取工作流的job"""
@@ -297,9 +297,10 @@ class FlowExecution:
     job_status_dict = dict()
     flow_timeout = 180
 
-    def __init__(self, prj_name, flow_id, exec_id, cookies_fetcher=cookies):
-        self.prj_name = prj_name
-        self.flowId = flow_id
+    def __init__(self, exec_id, cookies_fetcher=cookies):
+        infos = get_execution_prj_and_flow(exec_id)
+        self.prj_name = infos["prj_nm"]
+        self.flowId = infos["flow_id"]
         self.exec_id = exec_id
         self.cookies_fetcher = cookies_fetcher
 
@@ -372,7 +373,7 @@ class FlowExecution:
             logger.info(str(resp.content, 'utf-8'))
 
 # if __name__ == '__main__':
-#     prj = Project('webtest2', 'test1 web ')
+#     prj = Project('webtest2', 'xuzhenhua')
 #     # prj.download_zip()
 #     # prj.create_prj()
 #     prj.upload_zip('/home/xzh/OneDrive/myazkaban_job_test/test1ok.zip')  # sample_test2
