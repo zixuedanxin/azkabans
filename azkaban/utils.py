@@ -29,7 +29,7 @@ def eval_str(strs):
 
 def parse_url(url):
     """
-    Parse url, 返回 tuple of (username, password, address)
+    解析URL, 返回 tuple of (username, password, address)
     :param url: HTTP endpoint (including protocol, port, and optional user /password).
     Supported url formats:
     + protocol://host:port
@@ -68,7 +68,7 @@ def parse_url(url):
 
 def azkaban_request(method, url=azkaban_url, **kwargs):
     """
-    Make request to azkaban server and catch common errors.
+    azkaban api 请求request函数.
     :param method: GET, POST, etc.
     :param url:
     """
@@ -155,15 +155,28 @@ def active_executor(hosts=None, port=12321):
 
 
 def get_str_set(job_status_dict):
+    """
+    把job join到一起
+    :param job_status_dict:
+    :return:
+    """
     union_set = job_status_dict.get('SUCCEEDED', set()).union(job_status_dict.get('SKIPPED', set()))
     return "[\"" + "\",\"".join(union_set) + "\"]"
 
 
 def get_current_timekey():
+    """
+    当前时间
+    :return:
+    """
     return time.strftime("%Y%m%d%H%M%S")
 
 
 def azkaban_mysql_conn():
+    """
+    azkaban s数据库连接
+    :return:
+    """
     con = pymysql.connect(
         host=config.get('base', 'mysql_host'),
         port=config.getint('base', 'mysql_port'),
@@ -186,6 +199,10 @@ def azkaban_blob_to_str(blobs):
 
 
 def get_projects():
+    """
+    获取项目列表
+    :return:
+    """
     conn = azkaban_mysql_conn()
     df = pd.read_sql("select id prj_id,name prj_nm from projects where active=1", conn)
     st = df.groupby('prj_nm').count()
@@ -198,6 +215,11 @@ def get_projects():
 
 
 def get_execution_prj_and_flow(exec_id):
+    """
+    查找execu_id对应的项目和flow名称
+    :param exec_id:
+    :return:
+    """
     conn = azkaban_mysql_conn()
     sql = """select exec_id,flow_id,p.name prj_nm from execution_flows f 
         left join projects p on f.project_id=p.id
@@ -360,6 +382,12 @@ def crt_sys_prop(prj_nm):
 
 
 def check_depend_if_in_flow(strs, lists):
+    """
+    检查依赖
+    :param strs:
+    :param lists:
+    :return:
+    """
     if len(strs) > 1:
         tp = strs.split(",")
         for i in tp:
@@ -368,6 +396,11 @@ def check_depend_if_in_flow(strs, lists):
 
 
 def crt_job_file(prj_nm):
+    """
+    创建job文件
+    :param prj_nm:
+    :return:
+    """
     prj_conf_path = os.path.join(conf_path, prj_nm)
     filepath = os.path.join(prj_conf_path, prj_nm + '.csv')
     if os.path.exists(filepath):
@@ -381,15 +414,15 @@ def crt_job_file(prj_nm):
         os.makedirs(prj_path)
         df = df.fillna('')
         df['job_nm'] = df['job_nm'].apply(lambda x: x.strip())
-        jobs = list(df['job_nm'])
-        df['dependencies']=df['dependencies'].apply(lambda x: x.strip().replace("，", ",").replace(", ", ","))
-        df['dependencies'].apply(lambda x: check_depend_if_in_flow(x, jobs))
+        jobs = set(df['job_nm'])  # 需要配置的job set
+        df['dependencies'] = df['dependencies'].apply(lambda x: x.strip().replace("，", ",").replace(" ", ""))
+        df['dependencies'].apply(lambda x: check_depend_if_in_flow(x, jobs))  # 检查依赖job是否在配置中
         for i in df.to_dict(orient='records'):
             job_path = os.path.join(prj_path, i['job_nm'] + '.job')
             with open(job_path, 'w') as job:
                 job.write("type = command\n")
                 if len(i['dependencies']) > 1:
-                    job.write("dependencies = " + i['dependencies'].strip().replace("，", ",").replace(" ", ",") + "\n")
+                    job.write("dependencies = " + i['dependencies'].strip().replace("，", ",").replace(" ", "") + "\n")
                 job.write("retries = {0}\n".format(get_project_info(prj_nm, "retries") or 3))
                 job.write("retry.backoff = {0}\n".format(get_project_info(prj_nm, "retry.backoff") or 60000))  # 重试的间隔（毫秒）
                 if get_project_info(prj_nm, "failure.emails"):
@@ -408,23 +441,44 @@ def crt_job_file(prj_nm):
                     job.write(command.strip())
                 else:
                     logger.error("{0}项目job文件生中断，命令解析不通过".format(prj_nm))
-                    sys.exit(9)
-        # logger.info("{0}项目job文件生成完成".format(prj_nm))
-        crt_sys_prop(prj_nm)
-        copy_local_param(prj_nm)
+                    raise Exception("{0}项目job文件生中断，命令解析不通过".format(prj_nm))
+        # 生成end_flow
+        depend_job_set = set()  # 依赖的job set 集
+
+        def add_depend_job_set(strs):
+            """计算被依赖的job"""
+            if strs:
+                tp = strs.split(",")
+                depend_job_set.update(tp)  # 更新 job set
+
+        df[df['dependencies'].notna()]['dependencies'].apply(add_depend_job_set)
+        not_depended_jobs = ','.join(jobs - depend_job_set)  # 算出不被依赖的job
+        job_path = os.path.join(prj_path,  prj_nm + "_end_flow.job")
+        with open(job_path, 'w') as job:  # 生成end_flow_prj_nm.job 文件
+            job.write("type = command\n")
+            job.write("dependencies = " + not_depended_jobs + "\n")
+            job.write("command = echo 'all flow end' \n")
+        # end_flow job生成完成
+        crt_sys_prop(prj_nm)  # 生成全局系统参数文件  system.properies
+        copy_local_param(prj_nm)  # 把项目参数（例如dw.properies）输出到全局系统参数文件
         # copy_dir(prj_conf_path, os.path.join(prj_path, 'scripts'), ignore_file_type=['job', 'flow', 'project'])
         # copy_dir(prj_conf_path, prj_path, only_file_type=['job', 'flow', 'project'])
         copy_dir(prj_conf_path, prj_path, ignore_file_type=['properties'])
         zip_path = prj_path + '.zip'
-        zip_dir(prj_path, zip_path)
+        zip_dir(prj_path, zip_path)   # 将目标目录压缩成zip文件
         # logger.info("{0}项目压缩完成，文件路径是：{1}".format(prj_nm, zip_path))
-        return zip_path
+        return zip_path  # 返回zip文件路径
     else:
         logger.error("文件不存在:" + filepath)
         return None
 
 
 def check_cron(cron):
+    """
+    检查cron时间格式是否合规
+    :param cron:
+    :return:
+    """
     if cron and " " in cron:
         try:
             pt = Cron(cron)
@@ -488,7 +542,7 @@ def copy_local_param(prj_nm):
 
 def extract_json(response):
     """
-    Extract JSON from  response.
+    解析 JSON 来自  response.
     :param response: Request response object.
 
     """
@@ -507,6 +561,10 @@ def extract_json(response):
 
 
 def check_failed_job():
+    """
+    检查失败的job
+    :return:
+    """
     sql = """
     select
         distinct
