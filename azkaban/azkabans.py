@@ -1,13 +1,8 @@
-# import configparser
-# import requests
 import json
-# import logging
-# import os
 from azkaban.utils import *
 from azkaban.cookies import Cookies
 from azkaban.config import logger, check_interval, backup_path
 
-# logger = logging.getLogger()
 cookies = Cookies()
 
 
@@ -16,10 +11,10 @@ class Project:
         self.name = project
         self.description = description
         if description is None:
-            self.description = get_project_info(self.name, "description") or project
+            self.description = get_project_info(self.name, "项目说明") or project
         self.cookies_fetcher = cookies_fetcher
-        if project in get_projects():
-            self.crt_flag = True
+        if project in get_projects():  # 项目是否已经存在
+            self.crt_flag = True  # 项目是否已经存在
         else:
             self.crt_flag = False
 
@@ -70,8 +65,7 @@ class Project:
             #     'Upgrade-Insecure-Requests': '1',
             #     'azkaban_url': azkaban_url,
             # }
-            resp = requests.get(url,  # headers=headers,
-                                stream=True)  # cookies=self.cookies_fetcher.get_cookies(),
+            resp = requests.get(url, stream=True)  # headers=headers,
             now_time = get_current_timekey()
             backup_dt_dir = os.path.join(backup_path, now_time[0:8])
             if not (os.path.exists(backup_dt_dir)):
@@ -84,7 +78,7 @@ class Project:
             logger.info("下载ZIP文件完成" + self.name + ": " + file_path)
             return True
         else:
-            logger.info("项目不存在")
+            logger.info("项目不存在不能下载")
             return True
 
     def upload_zip(self, zip_file):
@@ -221,6 +215,7 @@ class Flow:
                 'ajax': u'scheduleCronFlow',
                 'projectName': self.prj_name,
                 'flow': self.flowId,
+                'failureAction': 'finishPossible',  # finishCurrent, cancelImmediatel
                 'cronExpression': cron
             }
 

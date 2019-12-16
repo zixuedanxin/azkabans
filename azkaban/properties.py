@@ -1,6 +1,8 @@
 from azkaban.config import logger
 import os
 import re
+
+
 # main_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # config_file = os.path.join(os.path.join(main_path, "conf"), "config.ini")
 # logging.config.fileConfig(config_file)
@@ -85,10 +87,38 @@ class Properties(object):
         else:
             logger.error("文件 %s not found" % file_name)
 
-#
+    def to_dict(self, json=None, start=None):
+        """
+        返回字符串映射的字典格式
+        :param json:
+        :param start:
+        :return:
+        """
+        if json is None:
+            json = self.properties
+        init_dict = {}
+        for i in json:
+            tp = json[i]
+            dic_deep = {}
+            if start is None:
+                new_key = i
+            else:
+                new_key = start + "." + i
+            if isinstance(tp, dict):
+                dic_deep = self.to_dict(tp, start=new_key)
+            else:
+                init_dict[new_key] = tp
+            if dic_deep:
+                init_dict.update(dic_deep)
+        return init_dict
+
+
 # if __name__ == '__main__':
 #     pro = Properties('/home/xzh/dps/etl/azkabans/conf/dw/dw.properties')
 #     pro.get_properties()
+#     print(pro.properties)
 #     print(pro.properties.keys())
-#     pro.put("sdshuake",'sggfhee44')
-#     print(pro.get_value_by_key("end"))
+#
+#     print(pro.to_dict())
+#     # pro.put("sdshuake",'sggfhee44')
+#     # print(pro.get_value_by_key("end"))

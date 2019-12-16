@@ -1,5 +1,4 @@
 from requests import HTTPError
-
 from azkaban.utils import *
 from azkaban.config import logger, login_pwd, login_user, azkaban_url
 import requests
@@ -11,17 +10,25 @@ class Cookies:
         self.login_data = {'action': 'login', 'username': user, 'password': pwd}
         try:
             resp = requests.post("{azkaban_url}".format(azkaban_url=azkaban_url), data=self.login_data)
+            self.cookies = resp.cookies
+            self.session_id = resp.json()['session.id']
+            logger.debug("azkaban登录成功")
         except Exception as e:
             logger.error("登录错误：" + str(e))
-            raise Exception(str(e))
-        self.cookies = resp.cookies
-        self.session_id = resp.json()['session.id']
-        logger.debug("azkaban登录成功")
+            # return None  # 对于重启就不需要登录成功
 
     def get_cookies(self):
+        """
+        获取cookies
+        :return:
+        """
         return self.cookies
 
     def get_session_id(self):
+        """
+        获取session_id
+        :return:
+        """
         return self.session_id
 
     def refresh(self):
@@ -54,16 +61,12 @@ class Cookies:
         return get_projects()
 
     def _request(self, method, endpoint, include_session='cookies', **kwargs):
-        """Make a request to Azkaban using this session.
-
-        :param method: HTTP method.
-        :param endpoint: Server endpoint (e.g. manager).
-        :param include_session: Where to include the `session_id` (possible values:
-          `'cookies'`, `'params'`, `False`).
+        """
+        通过sessionc创建request请求
+        :param method: HTTP
+        :param endpoint: executor 或 schedule azkaban链接参数
+        :param include_session: Where to include the `session_id` (possible values:`'cookies'`, `'params'`, `False`).
         :param kwargs: Keyword arguments passed to :func:`_azkaban_request`.
-
-        If the session expired, will prompt for a password to refresh.
-
         """
         full_url = '%s/%s' % (azkaban_url, endpoint.lstrip('/'))
 
@@ -72,7 +75,7 @@ class Cookies:
             self.refresh()
 
         def _send_request():
-            """Try sending the request with the appropriate credentials."""
+            """发送请求"""
             if include_session == 'cookies':
                 kwargs.setdefault('cookies', {})['azkaban.browser.session.id'] = self.session_id
             elif include_session == 'params':
@@ -95,7 +98,7 @@ class Cookies:
             response.raise_for_status()
         except HTTPError as err:  # catch, log, and reraise
             logger.warning(
-                'Received invalid response from %s:\n%s',
+                '获取无效的response  %s:\n%s',
                 response.request.url, response.content
             )
             raise err
@@ -119,10 +122,10 @@ class Cookies:
 
     def get_execution_logs(self, exec_id, offset=0, limit=50000):
         """
-        Get execution logs.
+        获得执行日志.
         :param exec_id: Execution ID.
-        :param offset: Log offset.
-        :param limit: Size of log to download.
+        :param offset: Log offset 开始位置.
+        :param limit: 下载的大小限制.
 
         """
         logger.debug('Fetching logs for execution %s.', exec_id)
@@ -139,7 +142,7 @@ class Cookies:
 
     def cancel_execution(self, exec_id):
         """
-        Cancel workflow execution.
+        取消执行execution.
         :param exec_id: Execution ID.
 
         """
@@ -159,8 +162,8 @@ class Cookies:
         return
 
     def get_sla(self, schedule_id):
-        """Get SLA information.
-
+        """
+         获取SLA设置信息. 基本不用
         :param schedule_id: Schedule Id - obtainable from get_schedule
 
         """
@@ -180,12 +183,11 @@ class Cookies:
 
     def set_sla(self, schedule_id, email, settings):
         """
-        Set SLA for a schedule.
+        为SLA设置执行计划 基本不用
         :param schedule_id: Schedule ID.
         :param email: Array of emails to receive notifications.
         :param settings: Array of comma delimited strings of SLA settings
           consisting of:
-
           + job name - blank for full workflow
           + rule - SUCCESS or FINISH
           + duration - specified in hh:mm

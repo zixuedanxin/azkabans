@@ -374,13 +374,15 @@ def crt_job_file(prj_nm):
         df = pd.read_csv(filepath)
         prj_path = os.path.join(temp_path, prj_nm)
         df['command'] = df['command'].fillna(
-            "echo 'Exec ${azkaban.job.id} of ${azkaban.flow.flowid} at ${azkaban.flow.start.timestamp}' etl_dt:${etl_dt} batch_dt:${batch_dt}")
+            "echo 'Exec ${azkaban.job.id} of ${azkaban.flow.flowid} with batch_id:${batch_id} etl_dt:${etl_dt} batch_dt:${batch_dt}'")
         if os.path.exists(prj_path):
             import shutil
             shutil.rmtree(prj_path)  # 清空项目对应的临时目录，一般是temp目录下
         os.makedirs(prj_path)
         df = df.fillna('')
+        df['job_nm'] = df['job_nm'].apply(lambda x: x.strip())
         jobs = list(df['job_nm'])
+        df['dependencies']=df['dependencies'].apply(lambda x: x.strip().replace("，", ",").replace(", ", ","))
         df['dependencies'].apply(lambda x: check_depend_if_in_flow(x, jobs))
         for i in df.to_dict(orient='records'):
             job_path = os.path.join(prj_path, i['job_nm'] + '.job')

@@ -33,6 +33,7 @@ azkaban_config_param = {
     'azkaban.flow.flowid': 'azkaban.flow.flowid',  # 运行的job的flow name
     'azkaban.flow.execid': 'azkaban.flow.execid',  # flow的执行id
     'azkaban.flow.projectid': 'azkaban.flow.projectid',  # 工程id
+    'azkaban.flow.projectname': 'azkaban.flow.projectname',  # 工程名称
     'azkaban.flow.projectversion': 'azkaban.flow.projectversion',  # project上传的版本
     'azkaban.flow.uuid': 'azkaban.flow.uuid',  # flow uuid
     'azkaban.flow.start.timestamp': 'azkaban.flow.start.timestamp',  # flow start的时间戳
